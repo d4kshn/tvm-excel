@@ -1,0 +1,83 @@
+{
+  "name": "TVM - Teams failure alert",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "aee137e0-2e4d-4b2a-8226-4dd765ac286f",
+      "name": "On workflow error",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "channelMessage",
+        "operation": "create",
+        "teamId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "channelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "contentType": "html",
+        "message": "=<b>n8n workflow failed: {{ $json.workflow.name }}</b><br>\n<b>Failed node:</b> {{ $json.execution?.lastNodeExecuted ?? 'trigger' }}<br>\n<b>Error:</b> {{ ($json.execution?.error?.message ?? $json.trigger?.error?.message ?? 'Unknown error').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }}<br>\n<b>Execution:</b> <a href=\"{{ $json.execution?.url }}\">{{ $json.execution?.id ?? 'n/a' }}</a>",
+        "options": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "id": "24eb5a1b-c594-4300-91bf-9a6afb14592a",
+      "name": "Post alert to Teams",
+      "type": "n8n-nodes-base.microsoftTeams",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "content": "## TVM - Teams failure alert\nPosts to a Teams channel whenever a workflow that uses this as its **Error workflow** fails. Only scheduled/production runs trigger it; manual test runs don't.\n\n1. Select a **Microsoft Teams OAuth2 API** credential in *Post alert to Teams*, then pick the **Team** and **Channel**.\n2. Publish (activate) this workflow. n8n 2.x only calls published error workflows.\n3. In *TVM tickets - SharePoint HTML to Excel (daily)*: **Workflow Settings → Error workflow →** this workflow.\n",
+        "height": 300,
+        "width": 560,
+        "color": 4
+      },
+      "id": "59e6a55b-aa14-4170-97b8-d75f7ec28123",
+      "name": "About",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        180
+      ]
+    }
+  ],
+  "connections": {
+    "On workflow error": {
+      "main": [
+        [
+          {
+            "node": "Post alert to Teams",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {}
+}

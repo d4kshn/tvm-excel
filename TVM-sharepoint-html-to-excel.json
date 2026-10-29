@@ -1,0 +1,793 @@
+{
+  "name": "TVM tickets - SharePoint HTML to Excel (daily)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 13
+            }
+          ]
+        }
+      },
+      "id": "a29ee4e4-5af9-400a-b2a8-fbb6053327ce",
+      "name": "Daily at 13:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ec8fb118-b951-4b5c-a2e8-2ac6d0de88f2",
+              "name": "ownerList",
+              "value": "={{ [] }}",
+              "type": "array"
+            },
+            {
+              "id": "ed6ee90c-1f8f-48e0-8302-f405ef5ca23c",
+              "name": "statusList",
+              "value": "={{ [] }}",
+              "type": "array"
+            },
+            {
+              "id": "829eac63-b71c-4da1-9d79-9ddba526277d",
+              "name": "lookbackDays",
+              "value": 2,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "58f1c810-4dfc-4bf3-b080-3e5bc455dce4",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ],
+      "notes": "ownerList: empty = all owners. Form version used: Julio Calderon, Pedro Faria, Zubair Malik, Deepak Padliya, Sel Soyer.\nstatusList: empty = every SLA status; [\"Overdue\"] = old overdue-only output.\nlookbackDays: how far back to look before the first checkpoint exists."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Files modified after this moment are new. Manual runs never save the checkpoint.\nconst saved = $getWorkflowStaticData('global').lastProcessedModified;\nconst fallback = $now.minus({ days: $('Config').first().json.lookbackDays }).toUTC().toISO();\nreturn [{ json: { since: saved || fallback } }];"
+      },
+      "id": "4f3ffd6e-16fa-4682-b5b6-cb7a801d596f",
+      "name": "Load checkpoint",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ],
+      "notes": "Why Code: no native node reads workflow static data, where the last successful run's checkpoint lives."
+    },
+    {
+      "parameters": {
+        "url": "=https://{{ $('Download HTML').params.site.value.split(',')[0] }}/_api/v2.0/sites/{{ $('Download HTML').params.site.value }}/drive/items/{{ $('Download HTML').params.folder.value }}/children",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftSharePointOAuth2Api",
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body['@odata.nextLink'] }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body['@odata.nextLink'] }}",
+              "limitPagesFetched": true,
+              "maxRequests": 25
+            }
+          }
+        }
+      },
+      "id": "e3706edc-b5d9-4b0f-b7db-3ea8600f74af",
+      "name": "List source folder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ],
+      "notes": "Why HTTP: the v1 SharePoint node can't list a folder. Same SharePoint credential; Site and Parent Folder come from the picks in 'Download HTML'.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "value",
+        "options": {}
+      },
+      "id": "e501873f-d69d-4ae9-b959-bab04044dc1b",
+      "name": "Split into files",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "b86d6028-df3e-4d58-a4d1-b8a5743ed1b1",
+              "leftValue": "={{ $json.file }}",
+              "rightValue": "",
+              "operator": {
+                "type": "object",
+                "operation": "exists",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "3b0f0645-65f7-4344-af2c-30bb7c5be052",
+              "leftValue": "={{ ($json.name || '').toLowerCase() }}",
+              "rightValue": "\\.html?$",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            },
+            {
+              "id": "09641a41-6c3f-42b1-9ea5-b125be4060e2",
+              "leftValue": "={{ $json.lastModifiedDateTime }}",
+              "rightValue": "={{ $('Load checkpoint').first().json.since }}",
+              "operator": {
+                "type": "dateTime",
+                "operation": "after"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d96f0428-0988-4b26-873f-d45a8fd3b15d",
+      "name": "New HTML files",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sortFieldsUi": {
+          "sortField": [
+            {
+              "fieldName": "lastModifiedDateTime",
+              "order": "ascending"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "80e1ecc3-7ec2-4ddd-b857-009260f4483a",
+      "name": "Oldest first",
+      "type": "n8n-nodes-base.sort",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        300
+      ],
+      "notes": "Two HTML files for the same date both write tvm-overdue-<date>.xlsx; oldest first means the newest one wins."
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "a16139c6-298b-44ec-b559-4f7c91f0b02f",
+      "name": "Loop over files",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "download",
+        "site": {
+          "__rl": true,
+          "mode": "list",
+          "value": "PICK-SERVICEFABRIC-SITE",
+          "cachedResultName": "⚠ Pick the ServiceFabric site"
+        },
+        "folder": {
+          "__rl": true,
+          "mode": "list",
+          "value": "PICK-SOURCE-FOLDER",
+          "cachedResultName": "⚠ Pick the source folder"
+        },
+        "file": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.id }}"
+        }
+      },
+      "id": "e6e84db1-01f5-491a-806e-a1b7a876b1e7",
+      "name": "Download HTML",
+      "type": "n8n-nodes-base.microsoftSharePoint",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        60
+      ],
+      "notes": "Pick the ServiceFabric Site and source Parent Folder here. Leave File as is.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Expose the downloaded file as `data`, and read the date from its SharePoint filename.\nconst file = $('Loop over files').first().json;\nconst bin = $input.first().binary || {};\nconst key = Object.keys(bin)[0];\nif (!key) {\n  throw new Error(`SharePoint returned no content for \"${file.name}\".`);\n}\nconst name = String(file.name || bin[key].fileName || '');\nconst m = name.match(/(\\d{4}-\\d{2}-\\d{2})/);\n// No date in the name: use the day the file was last modified in SharePoint.\nconst modified = file.lastModifiedDateTime ? DateTime.fromISO(file.lastModifiedDateTime).toFormat('yyyy-MM-dd') : '';\nreturn [{ json: { sourceDate: m ? m[1] : modified, sourceFile: name }, binary: { data: bin[key] } }];"
+      },
+      "id": "1e98d918-bd1a-49c0-9b4f-89612e8d84ff",
+      "name": "Normalize upload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2020,
+        60
+      ],
+      "notes": "Why Code: Edit Fields considered; kept from the form version. Reads the dashboard date from the file name (falls back to the SharePoint modified date) and passes the HTML on as `data`."
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "sourceData": "binary",
+        "dataPropertyName": "data",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "rowHtml",
+              "cssSelector": "table tr",
+              "returnValue": "html",
+              "returnArray": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c6f81e87-8764-4808-82ae-26014ada5aff",
+      "name": "Extract rows",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        2240,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "rowHtml",
+        "options": {}
+      },
+      "id": "09972230-4995-406f-b01a-df9458edb4e5",
+      "name": "Split rows",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        2460,
+        60
+      ],
+      "alwaysOutputData": true,
+      "notes": "Always Output Data is on so an HTML with no table rows still reaches Build rows, which then fails loudly instead of uploading nothing."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ade289b3-4fef-4446-bfa4-f23467a67314",
+              "name": "rowWrapped",
+              "value": "={{ '<table>' + $json.rowHtml + '</table>' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "22e325f9-0868-4b7c-87b6-bdd61e292c09",
+      "name": "Wrap row",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2680,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "sourceData": "json",
+        "dataPropertyName": "rowWrapped",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "ticket",
+              "cssSelector": "td:nth-child(1) a.tkt",
+              "returnValue": "text",
+              "returnArray": false
+            },
+            {
+              "key": "url",
+              "cssSelector": "td:nth-child(1) a.tkt",
+              "returnValue": "attribute",
+              "attribute": "href",
+              "returnArray": false
+            },
+            {
+              "key": "severity",
+              "cssSelector": "td:nth-child(2)",
+              "returnValue": "text",
+              "returnArray": false
+            },
+            {
+              "key": "state",
+              "cssSelector": "td:nth-child(3)",
+              "returnValue": "text",
+              "returnArray": false
+            },
+            {
+              "key": "sla",
+              "cssSelector": "td:nth-child(4)",
+              "returnValue": "text",
+              "returnArray": false
+            },
+            {
+              "key": "group",
+              "cssSelector": "td:nth-child(5)",
+              "returnValue": "text",
+              "returnArray": false
+            },
+            {
+              "key": "owner",
+              "cssSelector": "td:nth-child(6)",
+              "returnValue": "text",
+              "returnArray": false
+            },
+            {
+              "key": "created",
+              "cssSelector": "td:nth-child(7)",
+              "returnValue": "text",
+              "returnArray": false
+            },
+            {
+              "key": "daysActual",
+              "cssSelector": "td:nth-child(8)",
+              "returnValue": "text",
+              "returnArray": false
+            },
+            {
+              "key": "slaDays",
+              "cssSelector": "td:nth-child(9)",
+              "returnValue": "text",
+              "returnArray": false
+            },
+            {
+              "key": "daysOver",
+              "cssSelector": "td:nth-child(10)",
+              "returnValue": "text",
+              "returnArray": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c0caccbb-7981-4f8f-86ee-bcfdd2f73754",
+      "name": "Extract fields",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        2900,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "f85fc8c0-7531-4a85-b2d5-de0d77167bf7",
+              "leftValue": "={{ $('Config').first().json.statusList.length === 0 || $('Config').first().json.statusList.includes(($json.sla || '').trim()) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "83f578ff-b7b2-4516-8df0-e63ca0decd72",
+              "leftValue": "={{ $('Config').first().json.ownerList.length === 0 || $('Config').first().json.ownerList.includes(($json.owner || '').trim()) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a90d2083-6362-4f45-8091-ae3558d1571b",
+      "name": "Keep matching tickets",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        3120,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build the output columns, de-duplicated by ticket number.\n// UploadDate = the source dashboard date (same in every row) for the Power team's dashboard.\nconst source = $('Normalize upload').first().json;\nconst uploadDate = String(source.sourceDate || '');\nconst num = (v) => { const n = Number(String(v ?? '').trim()); return Number.isFinite(n) ? n : String(v ?? '').trim(); };\nconst seen = new Set();\nconst out = [];\nfor (const item of $input.all()) {\n  const j = item.json;\n  const ticket = String(j.ticket ?? '').trim();\n  if (!ticket || seen.has(ticket)) continue;\n  seen.add(ticket);\n  out.push({ json: {\n    'UploadDate': uploadDate,\n    'Overdue Tickets': ticket,\n    'Ticket URL': String(j.url ?? '').trim(),\n    'Severity': String(j.severity ?? '').trim(),\n    'State': String(j.state ?? '').trim(),\n    'Status': String(j.sla ?? '').trim(),\n    'Assignment Group': String(j.group ?? '').trim(),\n    'Assignment': String(j.owner ?? '').trim(),\n    'Created': String(j.created ?? '').trim(),\n    'Days Actual': num(j.daysActual),\n    'SLA Days': num(j.slaDays),\n    'Days Over': num(j.daysOver),\n    'Summary': '',\n  }});\n}\n// Rows reached this node but none had a ticket link: the dashboard layout probably changed.\nif (out.length === 0) {\n  throw new Error(`No ticket rows found in \"${source.sourceFile}\". Has the dashboard HTML layout changed?`);\n}\nreturn out;"
+      },
+      "id": "d8689ab2-2eb9-406f-933a-b51b500037c4",
+      "name": "Build rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3340,
+        60
+      ],
+      "notes": "Why Code: Remove Duplicates + Edit Fields considered; kept from the form version. Dedupe by ticket, 13-column mapping, number coercion and the no-tickets guard in one pass."
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {
+          "fileName": "={{ 'tvm-overdue-' + ($('Normalize upload').first().json.sourceDate || $now.toFormat('yyyy-MM-dd')) + '.xlsx' }}",
+          "sheetName": "TVM Tickets",
+          "headerRow": true
+        }
+      },
+      "id": "af4d5c83-3576-494b-a748-507eb0dee520",
+      "name": "To XLSX",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        3560,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "site": {
+          "__rl": true,
+          "mode": "list",
+          "value": "PICK-IPENGINEERING-SITE",
+          "cachedResultName": "⚠ Pick the IPEngineering site"
+        },
+        "folder": {
+          "__rl": true,
+          "mode": "list",
+          "value": "PICK-DESTINATION-FOLDER",
+          "cachedResultName": "⚠ Pick the destination folder"
+        },
+        "fileName": "={{ $binary.data.fileName }}",
+        "fileContents": "data"
+      },
+      "id": "e3768c89-23ae-46a5-a1c1-09fd9223e672",
+      "name": "Upload Excel",
+      "type": "n8n-nodes-base.microsoftSharePoint",
+      "typeVersion": 1,
+      "position": [
+        3780,
+        60
+      ],
+      "notes": "Pick the IPEngineering Site and destination Parent Folder. Overwrites a file with the same name.",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {},
+      "id": "3d6cd4af-b9a9-41f8-9b20-25cdad1e98e1",
+      "name": "Next file",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Every file in this run was processed: move the checkpoint to the newest file's modified time.\nconst state = $getWorkflowStaticData('global');\nlet latest = state.lastProcessedModified;\nfor (const item of $input.all()) {\n  const t = item.json.lastModifiedDateTime;\n  if (t && (!latest || new Date(t) > new Date(latest))) latest = t;\n}\nstate.lastProcessedModified = latest;\nreturn [{ json: { filesProcessed: $input.all().length, lastProcessedModified: latest } }];"
+      },
+      "id": "e61011b9-ed5a-4ed3-9b09-46cf62820e58",
+      "name": "Save checkpoint",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        520
+      ],
+      "notes": "Why Code: Remove Duplicates considered. It records files before they're processed, so a failed run would skip them for good. This saves the checkpoint only after every file in the run succeeded."
+    },
+    {
+      "parameters": {
+        "content": "## TVM tickets: SharePoint HTML → Excel (daily)\n\nEvery day at **13:00** (n8n instance timezone) this lists the **ServiceFabric** source folder, takes every `.html`/`.htm` file modified since the last successful run, turns each one into `tvm-overdue-<date>.xlsx` (same parsing as the form version) and uploads it to the **IPEngineering** folder, overwriting a file with the same name.\n\n### One-time setup\n1. Select your **Microsoft SharePoint OAuth2 API** credential in **List source folder**, **Download HTML** and **Upload Excel**.\n2. **Download HTML**: replace the two ⚠ placeholders: the ServiceFabric **Site**, then the source **Parent Folder**. Leave **File** as it is. *List source folder* reads these two picks, so this is the only place you set the source.\n3. **Upload Excel**: replace the two ⚠ placeholders: the IPEngineering **Site**, then the destination **Parent Folder**.\n4. Import **TVM - Teams failure alert**, set it up and publish it. Then here: **Workflow Settings → Error workflow →** that workflow.\n5. Click **Execute workflow** to test, then publish (activate).\n\nBoth folders must be in their site's default **Documents** (Shared Documents) library. The v1 SharePoint node, the only one your credential works with, can't reach other libraries.\n\n### Config\n- `ownerList`: empty = all owners. Add names to keep only those (the form version's five are in the node's notes).\n- `statusList`: empty = every SLA status. `[\"Overdue\"]` = the old overdue-only output.\n- `lookbackDays`: how far back to look before the first checkpoint exists.\n\n### Re-running a file\nRe-upload or edit the HTML: anything modified after the checkpoint is picked up on the next run. A failed run leaves the checkpoint alone, so the next day retries its files. Manual runs never move the checkpoint.\n",
+        "height": 900,
+        "width": 660,
+        "color": 4
+      },
+      "id": "a8ead4b3-67c4-498a-aa68-28cd87a948b0",
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Why \"Next file\" is its own branch\nFor each file, n8n first runs the top branch (Download HTML → … → Upload Excel), because branches run top to bottom. Then **Next file** asks the loop for the next file. If the top branch stops early (e.g. no rows match `ownerList`/`statusList`), the loop still moves on. **Keep Next file below Download HTML on the canvas.**\n\nAfter the last file, **Save checkpoint** runs. If any file fails, the run stops there and the checkpoint stays put, so the next run retries it.\n",
+        "height": 300,
+        "width": 620,
+        "color": 7
+      },
+      "id": "145f4c31-2301-4154-bda8-cb1d4baba87e",
+      "name": "Loop order",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2020,
+        240
+      ]
+    }
+  ],
+  "connections": {
+    "Daily at 13:00": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Load checkpoint",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load checkpoint": {
+      "main": [
+        [
+          {
+            "node": "List source folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List source folder": {
+      "main": [
+        [
+          {
+            "node": "Split into files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split into files": {
+      "main": [
+        [
+          {
+            "node": "New HTML files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New HTML files": {
+      "main": [
+        [
+          {
+            "node": "Oldest first",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Oldest first": {
+      "main": [
+        [
+          {
+            "node": "Loop over files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop over files": {
+      "main": [
+        [
+          {
+            "node": "Save checkpoint",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Download HTML",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Next file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Next file": {
+      "main": [
+        [
+          {
+            "node": "Loop over files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download HTML": {
+      "main": [
+        [
+          {
+            "node": "Normalize upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize upload": {
+      "main": [
+        [
+          {
+            "node": "Extract rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract rows": {
+      "main": [
+        [
+          {
+            "node": "Split rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split rows": {
+      "main": [
+        [
+          {
+            "node": "Wrap row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wrap row": {
+      "main": [
+        [
+          {
+            "node": "Extract fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract fields": {
+      "main": [
+        [
+          {
+            "node": "Keep matching tickets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keep matching tickets": {
+      "main": [
+        [
+          {
+            "node": "Build rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build rows": {
+      "main": [
+        [
+          {
+            "node": "To XLSX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "To XLSX": {
+      "main": [
+        [
+          {
+            "node": "Upload Excel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {}
+}
